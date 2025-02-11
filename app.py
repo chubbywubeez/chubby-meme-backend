@@ -31,15 +31,13 @@ ALLOWED_ORIGINS = [
 # Define timeouts
 REQUEST_TIMEOUT = 25  # Heroku's timeout is 30s, so we set this lower
 
-# Enhanced CORS configuration
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if os.getenv('ENVIRONMENT') == 'development' else ALLOWED_ORIGINS,
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_origins=["http://localhost:3000"],  # Frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
-    max_age=3600,
 )
 
 # Update the Cloudinary configuration
@@ -179,26 +177,12 @@ async def get_meme_status(job_id: str, request: Request):
         )
 
 @app.get("/api/health")
-async def health_check(request: Request):
-    try:
-        # Check Redis connection as part of health check
-        redis_service._ensure_connection()
-        queue_length = redis_service.get_queue_length()
-        
-        return JSONResponse(
-            content={
-                "status": "healthy",
-                "queue_length": queue_length
-            },
-            headers=get_cors_headers(request)
-        )
-    except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
-        return JSONResponse(
-            content={"status": "unhealthy", "detail": str(e)},
-            status_code=503,
-            headers=get_cors_headers(request)
-        )
+async def health_check():
+    return {
+        "status": "ok", 
+        "timestamp": datetime.now().isoformat(),
+        "service": "backend"
+    }
 
 @app.get("/api/meme/{meme_id}")
 async def get_meme(meme_id: str, request: Request):
