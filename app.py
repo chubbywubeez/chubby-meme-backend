@@ -250,22 +250,26 @@ async def share_meme(meme_id: str, request: Request):
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>Check out this AI-generated meme!</title>
             
+            <!-- Favicon -->
+            <link rel="icon" type="image/png" href="https://chubhub.chubgpt.io/favicon.ico">
+            <link rel="apple-touch-icon" href="https://chubhub.chubgpt.io/apple-touch-icon.png">
+            
             <!-- Twitter Card data -->
             <meta name="twitter:card" content="summary_large_image">
             <meta name="twitter:site" content="@ChubbyWubeez">
             <meta name="twitter:creator" content="@ChubbyWubeez">
-            <meta name="twitter:title" content="Check out this AI-generated meme!">
-            <meta name="twitter:description" content="Created with Chubby Wubeez Meme Generator - AI-powered humor at its finest">
+            <meta name="twitter:title" content="Make Money Making Memes with Chubby Wubeez!">
+            <meta name="twitter:description" content="Join Chubby Wubeez and start earning by creating viral memes today!">
             <meta name="twitter:image" content="{image_url}">
             <meta name="twitter:image:alt" content="AI-generated meme from Chubby Wubeez">
             
             <!-- Open Graph data -->
-            <meta property="og:title" content="Check out this AI-generated meme!">
+            <meta property="og:title" content="Make Money Making Memes with Chubby Wubeez!">
             <meta property="og:type" content="website">
             <meta property="og:url" content="{request.url}">
             <meta property="og:image" content="{image_url}">
-            <meta property="og:description" content="Created with Chubby Wubeez Meme Generator - AI-powered humor at its finest">
-            <meta property="og:site_name" content="Chubby Wubeez Meme Generator">
+            <meta property="og:description" content="Join Chubby Wubeez and start earning by creating viral memes today!">
+            <meta property="og:site_name" content="Chubby Wubeez">
             
             <style>
                 * {{
@@ -315,6 +319,7 @@ async def share_meme(meme_id: str, request: Request):
                     text-align: center;
                     font-size: clamp(1.5rem, 4vw, 2.5rem);
                     margin: 20px 0;
+                    color: #ff7b00;
                 }}
                 
                 .button {{
@@ -349,9 +354,9 @@ async def share_meme(meme_id: str, request: Request):
                 <div class="image-container">
                     <img src="{image_url}" alt="AI-generated meme">
                 </div>
-                <h1>Check out this AI-generated meme!</h1>
-                <a href="https://meme.chubgpt.io" class="button">
-                    Create Your Own Meme
+                <h1>Make Money Making Memes with Chubby Wubeez!</h1>
+                <a href="https://chubhub.chubgpt.io" class="button">
+                    Create Your Own Meme Here
                 </a>
             </div>
         </body>
