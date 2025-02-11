@@ -239,7 +239,8 @@ async def share_meme(meme_id: str, request: Request):
             if len(url_parts) == 2:
                 # Twitter large card optimal dimensions (2:1 ratio)
                 # w_1200,h_600 is Twitter's recommended size
-                image_url = f"{url_parts[0]}/upload/w_1200,h_600,c_pad,b_black/{url_parts[1]}"
+                # Add quality and format optimizations
+                image_url = f"{url_parts[0]}/upload/w_1200,h_600,c_pad,b_black,q_auto:best,f_auto/{url_parts[1]}"
         
         html_content = f"""
         <!DOCTYPE html>
@@ -247,22 +248,23 @@ async def share_meme(meme_id: str, request: Request):
         <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>Make Money Making Memes with Chubby Wubeez!</title>
+            <title>Check out this AI-generated meme!</title>
             
             <!-- Twitter Card data -->
             <meta name="twitter:card" content="summary_large_image">
             <meta name="twitter:site" content="@ChubbyWubeez">
-            <meta name="twitter:title" content="Make Money Making Memes with Chubby Wubeez!">
-            <meta name="twitter:description" content="AI-powered meme generator">
+            <meta name="twitter:creator" content="@ChubbyWubeez">
+            <meta name="twitter:title" content="Check out this AI-generated meme!">
+            <meta name="twitter:description" content="Created with Chubby Wubeez Meme Generator - AI-powered humor at its finest">
             <meta name="twitter:image" content="{image_url}">
-            <meta name="twitter:image:alt" content="AI-generated meme">
+            <meta name="twitter:image:alt" content="AI-generated meme from Chubby Wubeez">
             
             <!-- Open Graph data -->
-            <meta property="og:title" content="Make Money Making Memes with Chubby Wubeez!">
+            <meta property="og:title" content="Check out this AI-generated meme!">
             <meta property="og:type" content="website">
             <meta property="og:url" content="{request.url}">
             <meta property="og:image" content="{image_url}">
-            <meta property="og:description" content="AI-powered meme generator">
+            <meta property="og:description" content="Created with Chubby Wubeez Meme Generator - AI-powered humor at its finest">
             <meta property="og:site_name" content="Chubby Wubeez Meme Generator">
             
             <style>
@@ -347,7 +349,7 @@ async def share_meme(meme_id: str, request: Request):
                 <div class="image-container">
                     <img src="{image_url}" alt="AI-generated meme">
                 </div>
-                <h1>Make Money Making Memes with Chubby Wubeez!</h1>
+                <h1>Check out this AI-generated meme!</h1>
                 <a href="https://meme.chubgpt.io" class="button">
                     Create Your Own Meme
                 </a>
