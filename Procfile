@@ -1,2 +1,1 @@
-web: uvicorn app:app --host 0.0.0.0 --port 8080
-worker: python scripts/persona_cache_generator.py
+web: gunicorn app:app --preload --timeout 300 --workers 1 --worker-class uvicorn.workers.UvicornWorker

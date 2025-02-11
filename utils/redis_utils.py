@@ -4,13 +4,10 @@ import json
 from datetime import datetime
 from typing import Optional, Dict, Any
 from utils.logger import get_logger
-from dotenv import load_dotenv
-
-load_dotenv()
 
 logger = get_logger(__name__)
 
-# Use Railway Redis URL if available, otherwise use local
+# Redis configuration
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
 
 # Job status constants
@@ -32,16 +29,20 @@ QUEUE_CONFIG = {
 
 class RedisService:
     def __init__(self):
-        # Railway Redis configuration
-        self.redis_client = redis.from_url(REDIS_URL)
+        if REDIS_URL.startswith('rediss://'):
+            # For TLS connections on Heroku
+            self.redis_client = redis.from_url(
+                REDIS_URL,
+                ssl_cert_reqs=None,
+                decode_responses=True
+            )
+        else:
+            # For non-TLS connections (local development)
+            self.redis_client = redis.from_url(
+                REDIS_URL,
+                decode_responses=True
+            )
         self._ensure_connection()
-
-    def check_health(self):
-        try:
-            self.redis_client.ping()
-            return "connected"
-        except Exception as e:
-            return f"error: {str(e)}"
 
     def _ensure_connection(self):
         """Verify Redis connection is working"""

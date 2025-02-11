@@ -15,25 +15,17 @@ import uuid
 from datetime import datetime
 from utils.redis_utils import redis_service, JOB_STATUS
 from utils.logger import get_logger
-import random
 
 logger = get_logger(__name__)
 
-app = FastAPI(
-    title="Chubby Meme API",
-    description="API for generating memes",
-    version="1.0.0",
-    root_path=""  # Add this to ensure no prefix
-)
+app = FastAPI()
 
 # Define allowed origins
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "https://funny-flan-ea111b.netlify.app",
-    "https://chubby-meme-backend-production.up.railway.app",
-    "https://cards-dev.twitter.com",  # For Twitter card validation
-    "https://twitter.com",
-    "https://x.com"
+    "https://2c7b-76-218-100-58.ngrok-free.app",  # Add your ngrok URL
+    "https://cards-dev.twitter.com"
 ]
 
 # Define timeouts
@@ -42,14 +34,12 @@ REQUEST_TIMEOUT = 25  # Heroku's timeout is 30s, so we set this lower
 # Enhanced CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://funny-flan-ea111b.netlify.app",
-        "http://localhost:3000",
-        "https://chubby-meme-backend-production.up.railway.app"  # Add this
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=["*"] if os.getenv('ENVIRONMENT') == 'development' else ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 # Update the Cloudinary configuration
@@ -99,7 +89,7 @@ async def add_cors_headers(request: Request, call_next):
             headers=get_cors_headers(request)
         )
 
-@app.options("/generate-meme")
+@app.options("/api/generate-meme")
 async def generate_meme_preflight(request: Request):
     origin = request.headers.get('origin', '')
     if origin in ALLOWED_ORIGINS:
@@ -112,7 +102,7 @@ async def generate_meme_preflight(request: Request):
         return JSONResponse(content={"message": "Accepted"}, headers=headers)
     return JSONResponse(content={"message": "Invalid origin"}, status_code=400)
 
-@app.post("/generate-meme")
+@app.post("/api/generate-meme")
 async def generate_meme(request: MemeRequest, req: Request, background_tasks: BackgroundTasks):
     try:
         # Check queue length to prevent overload
@@ -160,7 +150,7 @@ async def generate_meme(request: MemeRequest, req: Request, background_tasks: Ba
             headers=get_cors_headers(req)
         )
 
-@app.get("/meme-status/{job_id}")
+@app.get("/api/meme-status/{job_id}")
 async def get_meme_status(job_id: str, request: Request):
     try:
         logger.info(f"Checking status for job {job_id}")
@@ -188,11 +178,29 @@ async def get_meme_status(job_id: str, request: Request):
             headers=get_cors_headers(request)
         )
 
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "redis": redis_service.check_health()}
+@app.get("/api/health")
+async def health_check(request: Request):
+    try:
+        # Check Redis connection as part of health check
+        redis_service._ensure_connection()
+        queue_length = redis_service.get_queue_length()
+        
+        return JSONResponse(
+            content={
+                "status": "healthy",
+                "queue_length": queue_length
+            },
+            headers=get_cors_headers(request)
+        )
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return JSONResponse(
+            content={"status": "unhealthy", "detail": str(e)},
+            status_code=503,
+            headers=get_cors_headers(request)
+        )
 
-@app.get("/meme/{meme_id}")
+@app.get("/api/meme/{meme_id}")
 async def get_meme(meme_id: str, request: Request):
     try:
         meme_data = redis_service.get_meme_data(meme_id)
@@ -219,7 +227,7 @@ async def get_meme(meme_id: str, request: Request):
             headers=get_cors_headers(request)
         )
 
-@app.get("/m/{meme_id}", response_class=HTMLResponse)
+@app.get("/share/{meme_id}", response_class=HTMLResponse)
 async def share_meme(meme_id: str, request: Request):
     try:
         logger.info(f"""
@@ -246,12 +254,6 @@ async def share_meme(meme_id: str, request: Request):
                 # w_1200,h_600 is Twitter's recommended size
                 image_url = f"{url_parts[0]}/upload/w_1200,h_600,c_pad,b_black/{url_parts[1]}"
         
-        # Get the base URL for the API
-        base_url = str(request.base_url).rstrip('/')
-        
-        # Get absolute URL for the share endpoint
-        share_url = f"{base_url}/m/{meme_id}"
-        
         html_content = f"""
         <!DOCTYPE html>
         <html lang="en">
@@ -271,7 +273,7 @@ async def share_meme(meme_id: str, request: Request):
             <!-- Open Graph data -->
             <meta property="og:title" content="Make Money Making Memes with Chubby Wubeez!">
             <meta property="og:type" content="website">
-            <meta property="og:url" content="{share_url}">
+            <meta property="og:url" content="{request.url}">
             <meta property="og:image" content="{image_url}">
             <meta property="og:description" content="AI-powered meme generator">
             <meta property="og:site_name" content="Chubby Wubeez Meme Generator">
@@ -359,7 +361,7 @@ async def share_meme(meme_id: str, request: Request):
                     <img src="{image_url}" alt="AI-generated meme">
                 </div>
                 <h1>Make Money Making Memes with Chubby Wubeez!</h1>
-                <a href="https://funny-flan-ea111b.netlify.app" class="button">
+                <a href="https://2c7b-76-218-100-58.ngrok-free.app" class="button">
                     Create Your Own Meme
                 </a>
             </div>
@@ -528,17 +530,6 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
             {"error": str(e)}
         )
 
-@app.get("/routes")
-async def list_routes():
-    routes = []
-    for route in app.routes:
-        routes.append({
-            "path": route.path,
-            "methods": route.methods,
-            "name": route.name
-        })
-    return {"routes": routes}
-
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080) 
+    uvicorn.run(app, host="0.0.0.0", port=8000) 
