@@ -23,6 +23,7 @@ app = FastAPI()
 # Define allowed origins
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
+    "http://localhost:3001",  # Add this for when port 3000 is in use
     "https://funny-flan-ea111b.netlify.app",
     "https://2c7b-76-218-100-58.ngrok-free.app",  # Add your ngrok URL
     "https://cards-dev.twitter.com"
@@ -34,7 +35,7 @@ REQUEST_TIMEOUT = 25  # Heroku's timeout is 30s, so we set this lower
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Frontend URL
+    allow_origins=ALLOWED_ORIGINS,  # Use the ALLOWED_ORIGINS list
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
