@@ -348,7 +348,7 @@ async def share_meme(meme_id: str, request: Request):
                     <img src="{image_url}" alt="AI-generated meme">
                 </div>
                 <h1>Make Money Making Memes with Chubby Wubeez!</h1>
-                <a href="https://2c7b-76-218-100-58.ngrok-free.app" class="button">
+                <a href="https://meme.chubgpt.io" class="button">
                     Create Your Own Meme
                 </a>
             </div>
@@ -400,7 +400,7 @@ async def root():
             <div>
                 <h1>Chubby Wubeez Meme API</h1>
                 <p class="status">✅ API is running</p>
-                <p>Visit <a href="https://funny-flan-ea111b.netlify.app" style="color: #ff7b00;">Chubby Wubeez</a> to create memes!</p>
+                <p>Visit <a href="https://meme.chubgpt.io" style="color: #ff7b00;">Chubby Wubeez</a> to create memes!</p>
             </div>
         </body>
         </html>
