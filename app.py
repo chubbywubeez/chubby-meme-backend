@@ -26,7 +26,9 @@ ALLOWED_ORIGINS = [
     "http://localhost:3001",  # Add this for when port 3000 is in use
     "https://funny-flan-ea111b.netlify.app",
     "https://2c7b-76-218-100-58.ngrok-free.app",  # Add your ngrok URL
-    "https://cards-dev.twitter.com"
+    "https://cards-dev.twitter.com",
+    "https://meme.chubgpt.io",  # Add custom domain
+    "http://meme.chubgpt.io"    # Add HTTP version just in case
 ]
 
 # Define timeouts
