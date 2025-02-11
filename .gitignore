@@ -59,5 +59,3 @@ dump.rdb
 # Test files
 test_*.py
 load_test.py
-media/
-venv/

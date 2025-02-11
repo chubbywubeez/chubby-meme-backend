@@ -31,7 +31,6 @@ ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "https://funny-flan-ea111b.netlify.app",
     "https://chubby-meme-backend-production.up.railway.app",
-    "https://meme.chubgpt.io",  # Your new domain
     "https://cards-dev.twitter.com",  # For Twitter card validation
     "https://twitter.com",
     "https://x.com"
@@ -46,8 +45,7 @@ app.add_middleware(
     allow_origins=[
         "https://funny-flan-ea111b.netlify.app",
         "http://localhost:3000",
-        "https://chubby-meme-backend-production.up.railway.app",
-        "https://meme.chubgpt.io",  # Your new domain
+        "https://chubby-meme-backend-production.up.railway.app"  # Add this
     ],
     allow_credentials=True,
     allow_methods=["*"],

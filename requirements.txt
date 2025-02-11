@@ -4,14 +4,14 @@ certifi==2024.12.14
 charset-normalizer==3.4.1
 click==8.1.8
 distro==1.9.0
-fastapi>=0.109.0
+fastapi
 h11==0.14.0
 httpcore==1.0.7
 httpx
 idna==3.10
 jiter==0.8.2
 oauthlib==3.2.2
-openai>=1.6.0
+openai
 pillow==11.1.0
 pydantic==2.10.6
 pydantic_core==2.27.2
@@ -24,7 +24,7 @@ starlette==0.45.3
 tqdm==4.67.1
 typing_extensions==4.12.2
 urllib3==2.3.0
-uvicorn[standard]>=0.25.0
+uvicorn
 gunicorn
 mysql-connector-python==8.0.26
 cloudinary==1.39.0
