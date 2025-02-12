@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import os
 import random
 from utils.logger import get_logger
+import asyncio
 
 # Load environment variables
 load_dotenv()
@@ -90,89 +91,57 @@ def generate_theme(theme_prompt, persona, theme_assistant_id):
                 return f"Chubby Wubby reacts to {theme_prompt}"
             time.sleep(1)
 
-def generate_content(persona, theme, content_assistant_id, char_limit=75, allow_emojis=False):
-    """Generate the final meme content based on persona and theme prompts"""
-    max_retries = 2  # Reduced retries for faster response
-    
-    # Validate inputs
-    persona = persona.strip() if isinstance(persona, str) else "a funny internet meme creator"
-    theme = theme.strip() if isinstance(theme, str) else "random funny moment in life"
-    char_limit = max(min(int(char_limit) if str(char_limit).isdigit() else 75, 150), 30)  # Ensure between 30-150 chars
-    
-    logger.info(f"""
-    ====== CONTENT GENERATION PARAMS ======
-    Persona: {persona}
-    Theme: {theme}
-    Char limit: {char_limit}
-    Allow emojis: {allow_emojis}
-    ====================================
-    """)
-    
-    for attempt in range(max_retries):
-        try:
-            thread = client.beta.threads.create()
-            
-            # Create a single, optimized prompt
-            emoji_instruction = "with 1-2 emojis not always placed at the end of sentence" if allow_emojis else "without emojis"
-            prompt = f"""Generate a funny, viral meme text ({char_limit} chars max) {emoji_instruction}.
-
-Context:
-- Persona/Character: {persona}
-- Theme/Topic: {theme}
-
-Requirements:
-1. MUST be under {char_limit} characters
-2. Be funny and engaging
-3. Include a clear punchline
-4. Use the persona's style
-5. Keep it concise and impactful
-
-Format: Return ONLY the meme text, nothing else. If inputs are vague, create something generally funny."""
-            
-            # Make a single API call
-            client.beta.threads.messages.create(
+async def generate_content(persona, theme, content_assistant_id, char_limit=75, allow_emojis=False):
+    """Single API call version"""
+    try:
+        thread = client.beta.threads.create()
+        
+        # Create optimized prompt
+        emoji_instruction = "with 1-2 emojis" if allow_emojis else "without emojis"
+        prompt = f"""Generate a funny, viral meme text ({char_limit} chars max) {emoji_instruction}.
+        
+        Context:
+        - Persona/Character: {persona}
+        - Theme/Topic: {theme}
+        
+        Requirements:
+        1. MUST be under {char_limit} characters
+        2. Be funny and engaging
+        3. Include a clear punchline
+        4. Use the persona's style
+        5. Keep it concise and impactful
+        
+        Format: Return ONLY the meme text, nothing else."""
+        
+        # Make a single message call with complete context
+        response = await asyncio.to_thread(
+            client.beta.threads.messages.create,
+            thread_id=thread.id,
+            role="user",
+            content=prompt
+        )
+        
+        # Single run call
+        run = await asyncio.to_thread(
+            client.beta.threads.runs.create,
+            thread_id=thread.id,
+            assistant_id=content_assistant_id
+        )
+        
+        # Wait and get response in one go
+        while True:
+            run_status = await asyncio.to_thread(
+                client.beta.threads.runs.retrieve,
                 thread_id=thread.id,
-                role="user",
-                content=prompt
+                run_id=run.id
             )
-            
-            run = client.beta.threads.runs.create(
-                thread_id=thread.id,
-                assistant_id=content_assistant_id
-            )
-            wait_for_run_completion(thread_id=thread.id, run_id=run.id)
-            response = get_assistant_response(thread.id)
-            
-            # Clean up response
-            response = response.strip().strip('"').strip()
-            
-            # Log response details
-            logger.info(f"""
-            ====== CONTENT RESPONSE ======
-            Length: {len(response)}
-            Content: {response}
-            =============================
-            """)
-            
-            # If response is empty or invalid, generate a default response
-            if not response or len(response) < 10:  # Minimum 10 chars for valid response
-                logger.warning("Empty or invalid response received, using default")
-                return "When in doubt, Chubby makes memes! 😅" if allow_emojis else "When in doubt, Chubby makes memes!"
-            
-            # If response is valid length, return it
-            if len(response) <= char_limit:
-                return response
-            
-            # If too long, try one more time with stricter instruction
-            if attempt < max_retries - 1:
-                logger.warning(f"Response too long ({len(response)} chars). Retrying...")
-                continue
-            
-            # If all attempts failed, return truncated version
-            return response[:char_limit]
-            
-        except Exception as e:
-            logger.error(f"Content generation attempt {attempt + 1} failed: {str(e)}")
-            if attempt == max_retries - 1:
-                return "Chubby Wubby is having a moment... 😅" if allow_emojis else "Chubby Wubby is having a moment..."
-            time.sleep(1)
+            if run_status.status == 'completed':
+                messages = await asyncio.to_thread(
+                    client.beta.threads.messages.list,
+                    thread_id=thread.id
+                )
+                return messages.data[0].content[0].text.value
+            await asyncio.sleep(1)
+    except Exception as e:
+        logger.error(f"Content generation failed: {str(e)}")
+        return "When in doubt, Chubby makes memes! 😅" if allow_emojis else "When in doubt, Chubby makes memes!"

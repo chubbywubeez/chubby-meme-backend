@@ -257,7 +257,7 @@ async def generate_art(persona_prompt, theme_prompt):
             persona_prompt=persona_prompt,
             theme_prompt=theme_prompt
         )
-        return image_path, metadata
+        return image_path
     except Exception as e:
         logger.error(f"Art generation failed: {str(e)}")
         raise
