@@ -194,7 +194,7 @@ def simulate_tweet(persona_prompt="", theme_prompt="", char_limit=75, allow_emoj
         else:
             # Fallback to generating new persona
             logger.warning("No cached personas found, generating new one")
-            new_persona = generate_new_persona()  # Use the function from persona_cache_generator
+            new_persona = generate_new_persona()
             if new_persona and "persona" in new_persona:
                 persona_response = new_persona["persona"]
             else:
@@ -202,26 +202,12 @@ def simulate_tweet(persona_prompt="", theme_prompt="", char_limit=75, allow_emoj
         
         if not persona_response:
             raise ValueError("Failed to get a valid persona")
-            
-        # Step 2: Get theme/angle from second agent
-        logger.info(f"""
-        ====== GENERATING THEME ======
-        Using persona: {persona_response[:200]}...
-        Theme prompt: {theme_prompt}
-        ===========================
-        """)
-        
-        theme_response = generate_theme(
-            theme_prompt=theme_prompt,
-            persona=persona_response,
-            theme_assistant_id=THEME_ASSISTANT_ID
-        )
 
-        # Step 3: Generate final content
+        # Generate content directly using the theme_prompt from user
         logger.info(f"""
         ====== GENERATING CONTENT ======
         Using persona: {persona_response[:200]}...
-        Using theme: {theme_response}
+        Using theme prompt: {theme_prompt}
         Char limit: {char_limit}
         Allow emojis: {allow_emojis}
         =============================
@@ -229,7 +215,7 @@ def simulate_tweet(persona_prompt="", theme_prompt="", char_limit=75, allow_emoj
         
         tweet_content = generate_content(
             persona=persona_response,
-            theme=theme_response,
+            theme=theme_prompt,  # Use theme_prompt directly
             content_assistant_id=CONTENT_ASSISTANT_ID,
             char_limit=char_limit,
             allow_emojis=allow_emojis

@@ -97,19 +97,21 @@ def generate_content(persona, theme, content_assistant_id, char_limit=75, allow_
         try:
             thread = client.beta.threads.create()
             
-            # First message to establish persona context
-            client.beta.threads.messages.create(
-                thread_id=thread.id,
-                role="user",
-                content=f"You are using this persona: {persona[:200]}..."
-            )
-            
-            # Second message for content generation
+            # Combine persona and theme into a single message for efficiency
             emoji_instruction = "with 1-2 emojis not always placed at the end of sentence" if allow_emojis else "do not include emojis"
+            prompt = f"""Using this persona: {persona[:200]}...
+            
+Create a funny, complete comment ({char_limit} chars max) {emoji_instruction} about: {theme}
+
+Remember:
+1. Stay within {char_limit} characters
+2. Make it funny and engaging
+3. Keep the punchline clear and impactful"""
+            
             client.beta.threads.messages.create(
                 thread_id=thread.id,
                 role="user",
-                content=f"Create a complete, funny comment ({char_limit} chars max) {emoji_instruction} about: {theme[:100]}"
+                content=prompt
             )
             
             run = client.beta.threads.runs.create(
@@ -127,35 +129,20 @@ def generate_content(persona, theme, content_assistant_id, char_limit=75, allow_
             =============================
             """)
             
-            # If response is too long, retry with a more explicit instruction
+            # If response is too long, retry with a shorter instruction
             if len(response) > char_limit:
-                logger.warning(f"Response too long ({len(response)} chars). Retrying with clearer instruction...")
+                logger.warning(f"Response too long ({len(response)} chars). Retrying with shorter instruction...")
                 client.beta.threads.messages.create(
                     thread_id=thread.id,
                     role="user",
-                    content=f"Write a shorter, complete sentence. Must be {char_limit} chars or less while keeping the punchline."
+                    content=f"Too long. Give me the shortest possible version that's still funny. Max {char_limit} chars."
                 )
-                
                 run = client.beta.threads.runs.create(
                     thread_id=thread.id,
                     assistant_id=content_assistant_id
                 )
                 wait_for_run_completion(thread.id, run.id)
                 response = get_assistant_response(thread.id)
-                
-                # If still too long, try one final time with stricter instruction
-                if len(response) > char_limit:
-                    client.beta.threads.messages.create(
-                        thread_id=thread.id,
-                        role="user",
-                        content=f"Too long. Give me the shortest possible version that's still funny. Max {char_limit} chars."
-                    )
-                    run = client.beta.threads.runs.create(
-                        thread_id=thread.id,
-                        assistant_id=content_assistant_id
-                    )
-                    wait_for_run_completion(thread.id, run.id)
-                    response = get_assistant_response(thread.id)
             
             # If we still have a too-long response, start a new attempt
             if len(response) > char_limit:
