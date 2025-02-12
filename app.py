@@ -441,6 +441,55 @@ async def get_queue_length(request: Request):
 async def favicon():
     return Response(status_code=204)
 
+@app.post("/api/force-clear-jobs")
+async def force_clear_jobs(request: Request):
+    try:
+        cleared_count = redis_service.force_clear_all_jobs()
+        return JSONResponse(
+            content={
+                "message": f"Force cleared {cleared_count} jobs",
+                "cleared_count": cleared_count
+            },
+            headers=get_cors_headers(request)
+        )
+    except Exception as e:
+        logger.error(f"Error force clearing jobs: {str(e)}")
+        return JSONResponse(
+            content={"detail": str(e)},
+            status_code=500,
+            headers=get_cors_headers(request)
+        )
+
+@app.post("/api/cleanup-stale-jobs")
+async def cleanup_stale_jobs(request: Request):
+    try:
+        # Clean up jobs older than 30 minutes
+        cleaned_count = redis_service.cleanup_stale_jobs(1800)
+        
+        # Also clean up the active_jobs set
+        active_jobs = redis_service.redis_client.smembers("active_jobs")
+        for job_id in active_jobs:
+            job_id = job_id.decode('utf-8') if isinstance(job_id, bytes) else job_id
+            # Check if job still exists
+            if not redis_service.get_job_status(job_id):
+                redis_service.redis_client.srem("active_jobs", job_id)
+                cleaned_count += 1
+        
+        return JSONResponse(
+            content={
+                "message": f"Cleaned up {cleaned_count} stale jobs",
+                "cleaned_count": cleaned_count
+            },
+            headers=get_cors_headers(request)
+        )
+    except Exception as e:
+        logger.error(f"Error cleaning up stale jobs: {str(e)}")
+        return JSONResponse(
+            content={"detail": str(e)},
+            status_code=500,
+            headers=get_cors_headers(request)
+        )
+
 async def process_meme_generation(job_id: str, request: MemeRequest):
     try:
         logger.info(f"""

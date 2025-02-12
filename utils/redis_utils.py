@@ -254,5 +254,41 @@ class RedisService:
             logger.error(f"Error getting meme data from Redis: {str(e)}")
             return None
 
+    def force_clear_all_jobs(self) -> int:
+        """Force clear all jobs and reset the queue (for maintenance)"""
+        try:
+            # Get all active jobs
+            active_jobs = self.redis_client.smembers("active_jobs")
+            cleared_count = 0
+            
+            logger.info(f"Force clearing {len(active_jobs)} active jobs")
+            
+            # Clear each job
+            for job_id in active_jobs:
+                job_id = job_id.decode('utf-8') if isinstance(job_id, bytes) else job_id
+                try:
+                    # Mark job as failed
+                    self.update_job_status(
+                        job_id,
+                        JOB_STATUS["FAILED"],
+                        {
+                            "error": "Job forcefully cleared during maintenance",
+                            "cleanup_time": datetime.utcnow().isoformat()
+                        }
+                    )
+                    cleared_count += 1
+                except Exception as e:
+                    logger.error(f"Error clearing job {job_id}: {str(e)}")
+            
+            # Clear the active jobs set
+            self.redis_client.delete("active_jobs")
+            
+            logger.info(f"Successfully cleared {cleared_count} jobs")
+            return cleared_count
+            
+        except Exception as e:
+            logger.error(f"Error force clearing jobs: {str(e)}")
+            return 0
+
 # Create a singleton instance
 redis_service = RedisService() 
