@@ -230,5 +230,29 @@ class RedisService:
             logger.error(f"Error storing meme data in Redis: {str(e)}")
             return False
 
+    def get_meme_data(self, meme_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve meme data from Redis with detailed logging"""
+        try:
+            meme_data = self.redis_client.get(f"meme:{meme_id}")
+            if not meme_data:
+                logger.info(f"No meme data found for {meme_id}")
+                return None
+                
+            data = json.loads(meme_data)
+            logger.info(f"Retrieved meme data for {meme_id}: {json.dumps(data, indent=2)}")
+            
+            # Validate required fields in retrieved data
+            required_fields = ['imageUrl', 'type', 'memeId']
+            missing_fields = [field for field in required_fields if field not in data]
+            if missing_fields:
+                logger.error(f"Retrieved meme data missing required fields: {missing_fields}")
+                return None
+                
+            return data
+            
+        except Exception as e:
+            logger.error(f"Error getting meme data from Redis: {str(e)}")
+            return None
+
 # Create a singleton instance
 redis_service = RedisService() 

@@ -15,6 +15,7 @@ import uuid
 from datetime import datetime
 from utils.redis_utils import redis_service, JOB_STATUS
 from utils.logger import get_logger
+import traceback
 
 logger = get_logger(__name__)
 
@@ -420,6 +421,22 @@ async def root():
         </html>
     """)
 
+@app.get("/api/queue-length")
+async def get_queue_length(request: Request):
+    try:
+        length = redis_service.get_queue_length()
+        return JSONResponse(
+            content={"queue_length": length},
+            headers=get_cors_headers(request)
+        )
+    except Exception as e:
+        logger.error(f"Error getting queue length: {str(e)}")
+        return JSONResponse(
+            content={"detail": str(e)},
+            status_code=500,
+            headers=get_cors_headers(request)
+        )
+
 @app.get("/favicon.ico")
 async def favicon():
     return Response(status_code=204)
@@ -452,7 +469,16 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                 logger.info(f"Starting meme generation for job {job_id}")
                 try:
                     # Log before simulate_tweet
-                    logger.info("Calling simulate_tweet function...")
+                    logger.info(f"""
+                    ====== Calling simulate_tweet ======
+                    Job ID: {job_id}
+                    Parameters:
+                    - Persona Prompt: {request.personaPrompt}
+                    - Theme Prompt: {request.themePrompt}
+                    - Char Limit: {request.charLimit}
+                    - Allow Emojis: {request.allowEmojis}
+                    ==============================
+                    """)
                     
                     image = simulate_tweet(
                         persona_prompt=request.personaPrompt,
@@ -461,12 +487,8 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                         allow_emojis=request.allowEmojis
                     )
                     
-                    # Log after simulate_tweet
-                    logger.info("simulate_tweet function completed successfully")
-                    
                     if not image:
-                        logger.error("simulate_tweet returned None")
-                        raise ValueError("Failed to generate meme image - returned None")
+                        raise ValueError("simulate_tweet returned None")
                         
                     logger.info("Successfully generated meme image")
                     
@@ -476,23 +498,28 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                     Error type: {type(e).__name__}
                     Error message: {str(e)}
                     Job ID: {job_id}
+                    Traceback:
+                    {traceback.format_exc()}
                     ================================
-                    """, exc_info=True)  # This will include the full traceback
+                    """)
                     redis_service.update_job_status(
                         job_id,
                         JOB_STATUS["FAILED"],
-                        {"error": f"Failed to generate meme: {type(e).__name__} - {str(e)}"}
+                        {
+                            "error": f"Failed to generate meme: {type(e).__name__} - {str(e)}",
+                            "error_type": type(e).__name__,
+                            "error_details": str(e),
+                            "traceback": traceback.format_exc()
+                        }
                     )
                     return
                 
                 try:
-                    logger.info("Uploading to Cloudinary...")
+                    logger.info("Starting Cloudinary upload...")
                     # Process and store result
                     buffered = BytesIO()
                     image.save(buffered, format="PNG")
                     
-                    # Log Cloudinary upload attempt
-                    logger.info("Starting Cloudinary upload...")
                     result = cloudinary.uploader.upload(
                         buffered.getvalue(),
                         folder="memes",
@@ -516,11 +543,24 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                     """)
                     
                 except Exception as e:
-                    logger.error(f"Error uploading to Cloudinary: {str(e)}")
+                    logger.error(f"""
+                    ====== Error uploading to Cloudinary ======
+                    Error type: {type(e).__name__}
+                    Error message: {str(e)}
+                    Job ID: {job_id}
+                    Traceback:
+                    {traceback.format_exc()}
+                    ====================================
+                    """)
                     redis_service.update_job_status(
                         job_id,
                         JOB_STATUS["FAILED"],
-                        {"error": f"Failed to upload image: {str(e)}"}
+                        {
+                            "error": f"Failed to upload image: {type(e).__name__} - {str(e)}",
+                            "error_type": type(e).__name__,
+                            "error_details": str(e),
+                            "traceback": traceback.format_exc()
+                        }
                     )
                     return
                 
@@ -557,20 +597,42 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                     logger.info(f"Job {job_id} completed successfully")
                     
                 except Exception as e:
-                    logger.error(f"Error storing meme data: {str(e)}")
+                    logger.error(f"""
+                    ====== Error storing meme data ======
+                    Error type: {type(e).__name__}
+                    Error message: {str(e)}
+                    Job ID: {job_id}
+                    Traceback:
+                    {traceback.format_exc()}
+                    ================================
+                    """)
                     redis_service.update_job_status(
                         job_id,
                         JOB_STATUS["FAILED"],
-                        {"error": f"Failed to store meme data: {str(e)}"}
+                        {
+                            "error": f"Failed to store meme data: {type(e).__name__} - {str(e)}",
+                            "error_type": type(e).__name__,
+                            "error_details": str(e),
+                            "traceback": traceback.format_exc()
+                        }
                     )
                     return
                     
         except asyncio.TimeoutError:
-            logger.error(f"Timeout during meme generation for job {job_id}")
+            logger.error(f"""
+            ====== Timeout Error ======
+            Job ID: {job_id}
+            Error: Request exceeded timeout of {REQUEST_TIMEOUT} seconds
+            ========================
+            """)
             redis_service.update_job_status(
                 job_id,
                 JOB_STATUS["FAILED"],
-                {"error": "Generation timed out"}
+                {
+                    "error": "Generation timed out",
+                    "error_type": "TimeoutError",
+                    "error_details": f"Request exceeded timeout of {REQUEST_TIMEOUT} seconds"
+                }
             )
             return
             
@@ -578,13 +640,21 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
         logger.error(f"""
         ====== Error in Meme Generation ======
         Job ID: {job_id}
-        Error: {str(e)}
+        Error type: {type(e).__name__}
+        Error message: {str(e)}
+        Traceback:
+        {traceback.format_exc()}
         ===================================
         """)
         redis_service.update_job_status(
             job_id,
             JOB_STATUS["FAILED"],
-            {"error": str(e)}
+            {
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "error_details": str(e),
+                "traceback": traceback.format_exc()
+            }
         )
 
 if __name__ == "__main__":
