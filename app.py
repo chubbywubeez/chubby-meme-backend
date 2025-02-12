@@ -438,92 +438,110 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
         
         try:
             async with asyncio.timeout(REQUEST_TIMEOUT):
-                # Add exponential backoff for OpenAI requests
-                max_retries = 3
-                retry_delay = 1
+                # Generate meme
+                logger.info(f"Starting meme generation for job {job_id}")
+                try:
+                    image = simulate_tweet(
+                        persona_prompt=request.personaPrompt,
+                        theme_prompt=request.themePrompt,
+                        char_limit=request.charLimit,
+                        allow_emojis=request.allowEmojis
+                    )
+                    
+                    if not image:
+                        raise ValueError("Failed to generate meme image")
+                        
+                    logger.info("Successfully generated meme image")
+                    
+                except Exception as e:
+                    logger.error(f"Error in simulate_tweet: {str(e)}")
+                    redis_service.update_job_status(
+                        job_id,
+                        JOB_STATUS["FAILED"],
+                        {"error": f"Failed to generate meme: {str(e)}"}
+                    )
+                    return
                 
-                for attempt in range(max_retries):
-                    try:
-                        # Generate meme
-                        logger.info(f"Generating meme image... (Attempt {attempt + 1}/{max_retries})")
-                        image = simulate_tweet(
-                            persona_prompt=request.personaPrompt,
-                            theme_prompt=request.themePrompt,
-                            char_limit=request.charLimit,
-                            allow_emojis=request.allowEmojis
-                        )
-                        break  # If successful, break the retry loop
-                    except Exception as e:
-                        if "rate_limit" in str(e).lower() or "too many requests" in str(e).lower():
-                            if attempt < max_retries - 1:
-                                wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
-                                logger.warning(f"Rate limited by OpenAI, waiting {wait_time} seconds before retry...")
-                                await asyncio.sleep(wait_time)
-                                continue
-                        raise  # Re-raise the exception if it's not a rate limit or we're out of retries
-                
-                logger.info("Uploading to Cloudinary...")
-                # Process and store result
-                buffered = BytesIO()
-                image.save(buffered, format="PNG")
-                
-                # Log Cloudinary upload attempt
-                logger.info("Starting Cloudinary upload...")
-                result = cloudinary.uploader.upload(
-                    buffered.getvalue(),
-                    folder="memes",
-                    resource_type="image",
-                    context={
-                        'alt': 'Chubby Wubeez Generated Meme',
-                        'caption': 'Generated with AI-powered humor',
-                        'twitter_card': 'summary_large_image',
-                        'twitter_site': '@ChubbyWubeez',
-                        'twitter_creator': '@ChubbyWubeez',
-                        'twitter_title': 'Check out this meme from Chubby Wubeez!',
-                        'twitter_description': 'Generated with AI-powered humor'
-                    }
-                )
-                
-                logger.info(f"""
-                ====== Cloudinary Upload Result ======
-                Secure URL: {result['secure_url']}
-                Resource Type: {result.get('resource_type')}
-                Format: {result.get('format')}
-                Size: {result.get('bytes')} bytes
-                =====================================
-                """)
-                
-                # Store meme data for sharing
-                meme_data = {
-                    "imageUrl": result['secure_url'],
-                    "publicUrl": result['secure_url'],
-                    "type": request.type,
-                    "memeId": job_id
-                }
-                
-                logger.info(f"""
-                ====== Storing Meme Data ======
-                Meme ID: {job_id}
-                Image URL: {meme_data['imageUrl']}
-                Public URL: {meme_data['publicUrl']}
-                ============================
-                """)
-                
-                redis_service.store_meme_data(job_id, meme_data)
-                
-                redis_service.update_job_status(
-                    job_id,
-                    JOB_STATUS["COMPLETED"],
-                    {
-                        "result": {
-                            "imageUrl": result['secure_url'],
-                            "type": request.type,
-                            "memeId": job_id
+                try:
+                    logger.info("Uploading to Cloudinary...")
+                    # Process and store result
+                    buffered = BytesIO()
+                    image.save(buffered, format="PNG")
+                    
+                    # Log Cloudinary upload attempt
+                    logger.info("Starting Cloudinary upload...")
+                    result = cloudinary.uploader.upload(
+                        buffered.getvalue(),
+                        folder="memes",
+                        resource_type="image",
+                        context={
+                            'alt': 'Chubby Wubeez Generated Meme',
+                            'caption': 'Generated with AI-powered humor'
                         }
-                    }
-                )
-                logger.info(f"Job {job_id} completed successfully")
+                    )
+                    
+                    if not result or 'secure_url' not in result:
+                        raise ValueError("Failed to get secure URL from Cloudinary")
+                        
+                    logger.info(f"""
+                    ====== Cloudinary Upload Result ======
+                    Secure URL: {result['secure_url']}
+                    Resource Type: {result.get('resource_type')}
+                    Format: {result.get('format')}
+                    Size: {result.get('bytes')} bytes
+                    =====================================
+                    """)
+                    
+                except Exception as e:
+                    logger.error(f"Error uploading to Cloudinary: {str(e)}")
+                    redis_service.update_job_status(
+                        job_id,
+                        JOB_STATUS["FAILED"],
+                        {"error": f"Failed to upload image: {str(e)}"}
+                    )
+                    return
                 
+                try:
+                    # Store meme data for sharing
+                    meme_data = {
+                        "imageUrl": result['secure_url'],
+                        "publicUrl": result['secure_url'],
+                        "type": request.type,
+                        "memeId": job_id
+                    }
+                    
+                    logger.info(f"""
+                    ====== Storing Meme Data ======
+                    Meme ID: {job_id}
+                    Image URL: {meme_data['imageUrl']}
+                    Public URL: {meme_data['publicUrl']}
+                    ============================
+                    """)
+                    
+                    redis_service.store_meme_data(job_id, meme_data)
+                    
+                    redis_service.update_job_status(
+                        job_id,
+                        JOB_STATUS["COMPLETED"],
+                        {
+                            "result": {
+                                "imageUrl": result['secure_url'],
+                                "type": request.type,
+                                "memeId": job_id
+                            }
+                        }
+                    )
+                    logger.info(f"Job {job_id} completed successfully")
+                    
+                except Exception as e:
+                    logger.error(f"Error storing meme data: {str(e)}")
+                    redis_service.update_job_status(
+                        job_id,
+                        JOB_STATUS["FAILED"],
+                        {"error": f"Failed to store meme data: {str(e)}"}
+                    )
+                    return
+                    
         except asyncio.TimeoutError:
             logger.error(f"Timeout during meme generation for job {job_id}")
             redis_service.update_job_status(

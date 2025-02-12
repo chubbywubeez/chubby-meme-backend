@@ -17,8 +17,16 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise ValueError("OpenAI API key is not set. Please add it to your .env file.")
 
-# Initialize OpenAI client
-client = OpenAI()
+# Initialize OpenAI client with error handling
+try:
+    client = OpenAI(
+        api_key=OPENAI_API_KEY,
+        timeout=60.0  # Increase timeout to 60 seconds
+    )
+    logger.info("Successfully initialized OpenAI client")
+except Exception as e:
+    logger.error(f"Failed to initialize OpenAI client: {str(e)}")
+    raise
 
 # Update with your actual assistant IDs
 PERSONA_ASSISTANT_ID = "asst_mdB3xM0OczHqAKOB3EBrcp72"
@@ -26,17 +34,37 @@ THEME_ASSISTANT_ID = "asst_KpVt3IbaX91ccQw8jVexfXff"
 CONTENT_ASSISTANT_ID = "asst_l4e1LATSvjLO7DsG8V7X8Q50"
 
 def wait_for_run_completion(thread_id, run_id):
-    while True:
-        run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
-        if run.status == 'completed':
-            return
-        elif run.status == 'failed':
-            raise Exception("Run failed")
-        time.sleep(1)
+    try:
+        max_retries = 30  # 30 seconds max wait
+        retry_count = 0
+        while retry_count < max_retries:
+            run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
+            if run.status == 'completed':
+                return True
+            elif run.status == 'failed':
+                logger.error(f"Run failed with status: {run.status}")
+                return False
+            elif run.status == 'expired':
+                logger.error("Run expired")
+                return False
+            time.sleep(1)
+            retry_count += 1
+        logger.error("Run timed out")
+        return False
+    except Exception as e:
+        logger.error(f"Error in wait_for_run_completion: {str(e)}")
+        return False
 
 def get_assistant_response(thread_id):
-    messages = client.beta.threads.messages.list(thread_id=thread_id)
-    return messages.data[0].content[0].text.value
+    try:
+        messages = client.beta.threads.messages.list(thread_id=thread_id)
+        if not messages.data:
+            logger.error("No messages found in thread")
+            return None
+        return messages.data[0].content[0].text.value
+    except Exception as e:
+        logger.error(f"Error getting assistant response: {str(e)}")
+        return None
 
 def determine_response_length(user_message):
     # Convert to lowercase for easier matching
@@ -65,6 +93,7 @@ def generate_theme(theme_prompt, persona, theme_assistant_id):
     max_retries = 3
     for attempt in range(max_retries):
         try:
+            logger.info(f"Generating theme (attempt {attempt + 1}/{max_retries})")
             thread = client.beta.threads.create()
             
             # Determine if it's crypto or non-crypto theme
@@ -81,20 +110,30 @@ def generate_theme(theme_prompt, persona, theme_assistant_id):
                 thread_id=thread.id,
                 assistant_id=theme_assistant_id
             )
-            wait_for_run_completion(thread.id, run.id)
-            return get_assistant_response(thread.id)
             
+            if not wait_for_run_completion(thread.id, run.id):
+                if attempt < max_retries - 1:
+                    logger.warning(f"Theme generation failed, retrying... ({attempt + 1}/{max_retries})")
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                    continue
+                return f"Chubby Wubby reacts to {theme_prompt}"
+                
+            response = get_assistant_response(thread.id)
+            if response:
+                return response
+                
         except Exception as e:
             logger.error(f"Theme generation attempt {attempt + 1} failed: {str(e)}")
             if attempt == max_retries - 1:
                 return f"Chubby Wubby reacts to {theme_prompt}"
-            time.sleep(1)
+            time.sleep(2 ** attempt)  # Exponential backoff
 
 def generate_content(persona, theme, content_assistant_id, char_limit=75, allow_emojis=False):
     """Generate the final meme content based on persona and theme"""
     max_retries = 3
     for attempt in range(max_retries):
         try:
+            logger.info(f"Generating content (attempt {attempt + 1}/{max_retries})")
             thread = client.beta.threads.create()
             
             # First message to establish persona context
@@ -116,17 +155,18 @@ def generate_content(persona, theme, content_assistant_id, char_limit=75, allow_
                 thread_id=thread.id,
                 assistant_id=content_assistant_id
             )
-            wait_for_run_completion(thread_id=thread.id, run_id=run.id)
+            
+            if not wait_for_run_completion(thread.id, run.id):
+                if attempt < max_retries - 1:
+                    logger.warning(f"Content generation failed, retrying... ({attempt + 1}/{max_retries})")
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                    continue
+                return "Chubby Wubby is having a moment..." + (" 😅" if allow_emojis else "")
+                
             response = get_assistant_response(thread.id)
-            
-            # Log response details
-            logger.info(f"""
-            ====== CONTENT RESPONSE ======
-            Length: {len(response)}
-            Content: {response}
-            =============================
-            """)
-            
+            if not response:
+                continue
+                
             # If response is too long, retry with a more explicit instruction
             if len(response) > char_limit:
                 logger.warning(f"Response too long ({len(response)} chars). Retrying with clearer instruction...")
@@ -140,22 +180,13 @@ def generate_content(persona, theme, content_assistant_id, char_limit=75, allow_
                     thread_id=thread.id,
                     assistant_id=content_assistant_id
                 )
-                wait_for_run_completion(thread.id, run.id)
-                response = get_assistant_response(thread.id)
                 
-                # If still too long, try one final time with stricter instruction
-                if len(response) > char_limit:
-                    client.beta.threads.messages.create(
-                        thread_id=thread.id,
-                        role="user",
-                        content=f"Too long. Give me the shortest possible version that's still funny. Max {char_limit} chars."
-                    )
-                    run = client.beta.threads.runs.create(
-                        thread_id=thread.id,
-                        assistant_id=content_assistant_id
-                    )
-                    wait_for_run_completion(thread.id, run.id)
-                    response = get_assistant_response(thread.id)
+                if not wait_for_run_completion(thread.id, run.id):
+                    continue
+                    
+                response = get_assistant_response(thread.id)
+                if not response:
+                    continue
             
             # If we still have a too-long response, start a new attempt
             if len(response) > char_limit:
@@ -166,5 +197,5 @@ def generate_content(persona, theme, content_assistant_id, char_limit=75, allow_
         except Exception as e:
             logger.error(f"Content generation attempt {attempt + 1} failed: {str(e)}")
             if attempt == max_retries - 1:
-                return "Chubby Wubby is having a moment... 😅" if allow_emojis else "Chubby Wubby is having a moment..."
-            time.sleep(1)
+                return "Chubby Wubby is having a moment..." + (" 😅" if allow_emojis else "")
+            time.sleep(2 ** attempt)  # Exponential backoff
