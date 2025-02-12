@@ -110,10 +110,17 @@ async def generate_meme(request: MemeRequest, req: Request, background_tasks: Ba
         queue_length = redis_service.get_queue_length()
         logger.info(f"Current queue length: {queue_length}")
 
+        # Clean up stale jobs older than 30 minutes
+        redis_service.cleanup_stale_jobs(1800)  # 1800 seconds = 30 minutes
+        
+        # Recheck queue length after cleanup
+        queue_length = redis_service.get_queue_length()
+        logger.info(f"Queue length after cleanup: {queue_length}")
+        
         if queue_length > 100:  # Adjust this number based on your capacity
             logger.warning("Queue is full, rejecting new requests")
             return JSONResponse(
-                content={"detail": "Server is currently busy. Please try again later."},
+                content={"detail": "Server is currently busy. Please try again in a few minutes."},
                 status_code=503,
                 headers=get_cors_headers(req)
             )
@@ -431,14 +438,29 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
         
         try:
             async with asyncio.timeout(REQUEST_TIMEOUT):
-                # Generate meme
-                logger.info("Generating meme image...")
-                image = simulate_tweet(
-                    persona_prompt=request.personaPrompt,
-                    theme_prompt=request.themePrompt,
-                    char_limit=request.charLimit,
-                    allow_emojis=request.allowEmojis
-                )
+                # Add exponential backoff for OpenAI requests
+                max_retries = 3
+                retry_delay = 1
+                
+                for attempt in range(max_retries):
+                    try:
+                        # Generate meme
+                        logger.info(f"Generating meme image... (Attempt {attempt + 1}/{max_retries})")
+                        image = simulate_tweet(
+                            persona_prompt=request.personaPrompt,
+                            theme_prompt=request.themePrompt,
+                            char_limit=request.charLimit,
+                            allow_emojis=request.allowEmojis
+                        )
+                        break  # If successful, break the retry loop
+                    except Exception as e:
+                        if "rate_limit" in str(e).lower() or "too many requests" in str(e).lower():
+                            if attempt < max_retries - 1:
+                                wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                                logger.warning(f"Rate limited by OpenAI, waiting {wait_time} seconds before retry...")
+                                await asyncio.sleep(wait_time)
+                                continue
+                        raise  # Re-raise the exception if it's not a rate limit or we're out of retries
                 
                 logger.info("Uploading to Cloudinary...")
                 # Process and store result
