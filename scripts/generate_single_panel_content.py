@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 import os
 import random
 from utils.logger import get_logger
-import asyncio
 
 # Load environment variables
 load_dotenv()
@@ -91,57 +90,81 @@ def generate_theme(theme_prompt, persona, theme_assistant_id):
                 return f"Chubby Wubby reacts to {theme_prompt}"
             time.sleep(1)
 
-async def generate_content(persona, theme, content_assistant_id, char_limit=75, allow_emojis=False):
-    """Single API call version"""
-    try:
-        thread = client.beta.threads.create()
-        
-        # Create optimized prompt
-        emoji_instruction = "with 1-2 emojis" if allow_emojis else "without emojis"
-        prompt = f"""Generate a funny, viral meme text ({char_limit} chars max) {emoji_instruction}.
-        
-        Context:
-        - Persona/Character: {persona}
-        - Theme/Topic: {theme}
-        
-        Requirements:
-        1. MUST be under {char_limit} characters
-        2. Be funny and engaging
-        3. Include a clear punchline
-        4. Use the persona's style
-        5. Keep it concise and impactful
-        
-        Format: Return ONLY the meme text, nothing else."""
-        
-        # Make a single message call with complete context
-        response = await asyncio.to_thread(
-            client.beta.threads.messages.create,
-            thread_id=thread.id,
-            role="user",
-            content=prompt
-        )
-        
-        # Single run call
-        run = await asyncio.to_thread(
-            client.beta.threads.runs.create,
-            thread_id=thread.id,
-            assistant_id=content_assistant_id
-        )
-        
-        # Wait and get response in one go
-        while True:
-            run_status = await asyncio.to_thread(
-                client.beta.threads.runs.retrieve,
+def generate_content(persona, theme, content_assistant_id, char_limit=75, allow_emojis=False):
+    """Generate the final meme content based on persona and theme"""
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            thread = client.beta.threads.create()
+            
+            # First message to establish persona context
+            client.beta.threads.messages.create(
                 thread_id=thread.id,
-                run_id=run.id
+                role="user",
+                content=f"You are using this persona: {persona[:200]}..."
             )
-            if run_status.status == 'completed':
-                messages = await asyncio.to_thread(
-                    client.beta.threads.messages.list,
-                    thread_id=thread.id
+            
+            # Second message for content generation
+            emoji_instruction = "with 1-2 emojis not always placed at the end of sentence" if allow_emojis else "do not include emojis"
+            client.beta.threads.messages.create(
+                thread_id=thread.id,
+                role="user",
+                content=f"Create a complete, funny comment ({char_limit} chars max) {emoji_instruction} about: {theme[:100]}"
+            )
+            
+            run = client.beta.threads.runs.create(
+                thread_id=thread.id,
+                assistant_id=content_assistant_id
+            )
+            wait_for_run_completion(thread_id=thread.id, run_id=run.id)
+            response = get_assistant_response(thread.id)
+            
+            # Log response details
+            logger.info(f"""
+            ====== CONTENT RESPONSE ======
+            Length: {len(response)}
+            Content: {response}
+            =============================
+            """)
+            
+            # If response is too long, retry with a more explicit instruction
+            if len(response) > char_limit:
+                logger.warning(f"Response too long ({len(response)} chars). Retrying with clearer instruction...")
+                client.beta.threads.messages.create(
+                    thread_id=thread.id,
+                    role="user",
+                    content=f"Write a shorter, complete sentence. Must be {char_limit} chars or less while keeping the punchline."
                 )
-                return messages.data[0].content[0].text.value
-            await asyncio.sleep(1)
-    except Exception as e:
-        logger.error(f"Content generation failed: {str(e)}")
-        return "When in doubt, Chubby makes memes! 😅" if allow_emojis else "When in doubt, Chubby makes memes!"
+                
+                run = client.beta.threads.runs.create(
+                    thread_id=thread.id,
+                    assistant_id=content_assistant_id
+                )
+                wait_for_run_completion(thread.id, run.id)
+                response = get_assistant_response(thread.id)
+                
+                # If still too long, try one final time with stricter instruction
+                if len(response) > char_limit:
+                    client.beta.threads.messages.create(
+                        thread_id=thread.id,
+                        role="user",
+                        content=f"Too long. Give me the shortest possible version that's still funny. Max {char_limit} chars."
+                    )
+                    run = client.beta.threads.runs.create(
+                        thread_id=thread.id,
+                        assistant_id=content_assistant_id
+                    )
+                    wait_for_run_completion(thread.id, run.id)
+                    response = get_assistant_response(thread.id)
+            
+            # If we still have a too-long response, start a new attempt
+            if len(response) > char_limit:
+                continue
+                
+            return response
+            
+        except Exception as e:
+            logger.error(f"Content generation attempt {attempt + 1} failed: {str(e)}")
+            if attempt == max_retries - 1:
+                return "Chubby Wubby is having a moment... 😅" if allow_emojis else "Chubby Wubby is having a moment..."
+            time.sleep(1)

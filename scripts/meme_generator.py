@@ -6,10 +6,6 @@ import sys
 from fastapi import HTTPException
 import random
 import json
-import time
-from openai import OpenAI
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
 
 # Add the backend directory to Python path
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -34,8 +30,6 @@ PERSONA_ASSISTANT_ID = "asst_mdB3xM0OczHqAKOB3EBrcp72"
 THEME_ASSISTANT_ID = "asst_KpVt3IbaX91ccQw8jVexfXff"
 CONTENT_ASSISTANT_ID = "asst_l4e1LATSvjLO7DsG8V7X8Q50"
 
-# OpenAI client
-client = OpenAI()
 
 def add_text_to_image(image_path, text, allow_emojis=False, output_path="output/final_tweet.png"):
     """
@@ -171,95 +165,88 @@ def add_text_to_image(image_path, text, allow_emojis=False, output_path="output/
         raise
 
 
-async def simulate_tweet(persona_prompt="", theme_prompt="", char_limit=75, allow_emojis=True):
+def simulate_tweet(persona_prompt="", theme_prompt="", char_limit=75, allow_emojis=True):
     try:
-        logger.info(f"Starting meme generation with persona: {persona_prompt}, theme: {theme_prompt}")
+        logger.info("Starting meme generation")
         
-        # Run art generation and content generation in parallel
-        art_task = asyncio.create_task(generate_art(persona_prompt, theme_prompt))
-        content_task = asyncio.create_task(generate_content(
-            persona=persona_prompt,
-            theme=theme_prompt,
-            content_assistant_id=CONTENT_ASSISTANT_ID,
-            char_limit=char_limit,
-            allow_emojis=allow_emojis
-        ))
-        
-        # Wait for both tasks to complete
-        image_path, tweet_content = await asyncio.gather(art_task, content_task)
-        
-        # Create final image and return it directly
-        final_image = add_text_to_image(image_path, tweet_content, allow_emojis)
-        return final_image  # This is now a PIL Image object
-    except Exception as e:
-        logger.error(f"Tweet generation failed: {str(e)}")
-        raise
-
-
-def generate_content(persona, theme, content_assistant_id, char_limit=75, allow_emojis=False):
-    """Single API call version"""
-    try:
-        thread = client.beta.threads.create()
-        
-        # Create optimized prompt
-        emoji_instruction = "with 1-2 emojis" if allow_emojis else "without emojis"
-        prompt = f"""Generate a funny, viral meme text ({char_limit} chars max) {emoji_instruction}.
-        
-        Context:
-        - Persona/Character: {persona}
-        - Theme/Topic: {theme}
-        
-        Requirements:
-        1. MUST be under {char_limit} characters
-        2. Be funny and engaging
-        3. Include a clear punchline
-        4. Use the persona's style
-        5. Keep it concise and impactful
-        
-        Format: Return ONLY the meme text, nothing else."""
-        
-        # Make a single message call with complete context
-        response = client.beta.threads.messages.create(
-            thread_id=thread.id,
-            role="user",
-            content=prompt
-        )
-        
-        # Single run call
-        run = client.beta.threads.runs.create(
-            thread_id=thread.id,
-            assistant_id=content_assistant_id
-        )
-        
-        # Wait and get response in one go
-        while True:
-            run_status = client.beta.threads.runs.retrieve(
-                thread_id=thread.id,
-                run_id=run.id
-            )
-            if run_status.status == 'completed':
-                messages = client.beta.threads.messages.list(thread_id=thread.id)
-                return messages.data[0].content[0].text.value
-            time.sleep(1)
-    except Exception as e:
-        logger.error(f"Content generation failed: {str(e)}")
-        return "When in doubt, Chubby makes memes! 😅" if allow_emojis else "When in doubt, Chubby makes memes!"
-
-
-async def generate_art(persona_prompt, theme_prompt):
-    """Async function to generate art with optimized asset loading"""
-    try:
-        # Get the image path and metadata
-        image_path, metadata = await asyncio.to_thread(
-            get_generated_art,
-            output_path="output/generated_art.png",
+        # Generate art first
+        image_path, metadata_traits = get_generated_art(
+            output_path="output/generated_art.png", 
             return_metadata=True,
             persona_prompt=persona_prompt,
             theme_prompt=theme_prompt
         )
-        return image_path
+        
+        # Get a random cached persona instead of generating one
+        personas_data = load_personas()
+        logger.info(f"Loaded personas data: {json.dumps(personas_data, indent=2)}")
+        
+        if personas_data["personas"]:
+            cached_persona = random.choice(personas_data["personas"])
+            persona_response = cached_persona["persona"]
+            logger.info(f"""
+            ====== USING CACHED PERSONA ======
+            Generated at: {cached_persona['generated_at']}
+            Persona content: 
+            {persona_response}
+            ================================
+            """)
+        else:
+            # Fallback to generating new persona
+            logger.warning("No cached personas found, generating new one")
+            new_persona = generate_new_persona()  # Use the function from persona_cache_generator
+            if new_persona and "persona" in new_persona:
+                persona_response = new_persona["persona"]
+            else:
+                raise ValueError("Failed to generate new persona")
+        
+        if not persona_response:
+            raise ValueError("Failed to get a valid persona")
+            
+        # Step 2: Get theme/angle from second agent
+        logger.info(f"""
+        ====== GENERATING THEME ======
+        Using persona: {persona_response[:200]}...
+        Theme prompt: {theme_prompt}
+        ===========================
+        """)
+        
+        theme_response = generate_theme(
+            theme_prompt=theme_prompt,
+            persona=persona_response,
+            theme_assistant_id=THEME_ASSISTANT_ID
+        )
+
+        # Step 3: Generate final content
+        logger.info(f"""
+        ====== GENERATING CONTENT ======
+        Using persona: {persona_response[:200]}...
+        Using theme: {theme_response}
+        Char limit: {char_limit}
+        Allow emojis: {allow_emojis}
+        =============================
+        """)
+        
+        tweet_content = generate_content(
+            persona=persona_response,
+            theme=theme_response,
+            content_assistant_id=CONTENT_ASSISTANT_ID,
+            char_limit=char_limit,
+            allow_emojis=allow_emojis
+        )
+
+        # Create the image
+        final_image = add_text_to_image(image_path, tweet_content, allow_emojis=allow_emojis)
+        return final_image
+
     except Exception as e:
-        logger.error(f"Art generation failed: {str(e)}")
+        logger.error(f"""
+        ====== ERROR IN SIMULATE_TWEET ======
+        Error: {str(e)}
+        Persona prompt: {persona_prompt}
+        Theme prompt: {theme_prompt}
+        ================================
+        """)
         raise
 
 
