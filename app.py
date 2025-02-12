@@ -446,7 +446,7 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                     try:
                         # Generate meme
                         logger.info(f"Generating meme image... (Attempt {attempt + 1}/{max_retries})")
-                        image = simulate_tweet(
+                        image = await simulate_tweet(
                             persona_prompt=request.personaPrompt,
                             theme_prompt=request.themePrompt,
                             char_limit=request.charLimit,
@@ -466,6 +466,7 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                 # Process and store result
                 buffered = BytesIO()
                 image.save(buffered, format="PNG")
+                buffered.seek(0)  # Reset buffer position to start
                 
                 # Log Cloudinary upload attempt
                 logger.info("Starting Cloudinary upload...")

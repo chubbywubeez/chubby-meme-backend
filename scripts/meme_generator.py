@@ -173,18 +173,24 @@ def add_text_to_image(image_path, text, allow_emojis=False, output_path="output/
 
 async def simulate_tweet(persona_prompt="", theme_prompt="", char_limit=75, allow_emojis=True):
     try:
+        logger.info(f"Starting meme generation with persona: {persona_prompt}, theme: {theme_prompt}")
+        
         # Run art generation and content generation in parallel
         art_task = asyncio.create_task(generate_art(persona_prompt, theme_prompt))
         content_task = asyncio.create_task(generate_content(
-            persona_prompt, theme_prompt, char_limit, allow_emojis
+            persona=persona_prompt,
+            theme=theme_prompt,
+            content_assistant_id=CONTENT_ASSISTANT_ID,
+            char_limit=char_limit,
+            allow_emojis=allow_emojis
         ))
         
         # Wait for both tasks to complete
         image_path, tweet_content = await asyncio.gather(art_task, content_task)
         
-        # Create final image
+        # Create final image and return it directly
         final_image = add_text_to_image(image_path, tweet_content, allow_emojis)
-        return final_image
+        return final_image  # This is now a PIL Image object
     except Exception as e:
         logger.error(f"Tweet generation failed: {str(e)}")
         raise
