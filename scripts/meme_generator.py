@@ -167,86 +167,101 @@ def add_text_to_image(image_path, text, allow_emojis=False, output_path="output/
 
 def simulate_tweet(persona_prompt="", theme_prompt="", char_limit=75, allow_emojis=True):
     try:
-        logger.info("Starting meme generation")
+        logger.info(f"""
+        ====== Starting Meme Generation ======
+        Persona Prompt: {persona_prompt}
+        Theme Prompt: {theme_prompt}
+        Char Limit: {char_limit}
+        Allow Emojis: {allow_emojis}
+        ===================================
+        """)
         
         # Generate art first
-        image_path, metadata_traits = get_generated_art(
-            output_path="output/generated_art.png", 
-            return_metadata=True,
-            persona_prompt=persona_prompt,
-            theme_prompt=theme_prompt
-        )
+        logger.info("Starting art generation...")
+        try:
+            image_path, metadata_traits = get_generated_art(
+                output_path="output/generated_art.png", 
+                return_metadata=True,
+                persona_prompt=persona_prompt,
+                theme_prompt=theme_prompt
+            )
+            logger.info(f"Art generation successful: {image_path}")
+        except Exception as e:
+            logger.error(f"Art generation failed: {type(e).__name__} - {str(e)}", exc_info=True)
+            raise
         
         # Get a random cached persona instead of generating one
-        personas_data = load_personas()
-        logger.info(f"Loaded personas data: {json.dumps(personas_data, indent=2)}")
-        
-        if personas_data["personas"]:
-            cached_persona = random.choice(personas_data["personas"])
-            persona_response = cached_persona["persona"]
-            logger.info(f"""
-            ====== USING CACHED PERSONA ======
-            Generated at: {cached_persona['generated_at']}
-            Persona content: 
-            {persona_response}
-            ================================
-            """)
-        else:
-            # Fallback to generating new persona
-            logger.warning("No cached personas found, generating new one")
-            new_persona = generate_new_persona()  # Use the function from persona_cache_generator
-            if new_persona and "persona" in new_persona:
-                persona_response = new_persona["persona"]
+        logger.info("Loading cached personas...")
+        try:
+            personas_data = load_personas()
+            logger.info(f"Loaded {len(personas_data.get('personas', []))} cached personas")
+            
+            if personas_data["personas"]:
+                cached_persona = random.choice(personas_data["personas"])
+                persona_response = cached_persona["persona"]
+                logger.info("Successfully selected cached persona")
             else:
-                raise ValueError("Failed to generate new persona")
+                logger.warning("No cached personas found, generating new one")
+                new_persona = generate_new_persona()
+                if new_persona and "persona" in new_persona:
+                    persona_response = new_persona["persona"]
+                    logger.info("Successfully generated new persona")
+                else:
+                    raise ValueError("Failed to generate new persona")
+        except Exception as e:
+            logger.error(f"Persona generation failed: {type(e).__name__} - {str(e)}", exc_info=True)
+            raise
         
         if not persona_response:
             raise ValueError("Failed to get a valid persona")
             
         # Step 2: Get theme/angle from second agent
-        logger.info(f"""
-        ====== GENERATING THEME ======
-        Using persona: {persona_response[:200]}...
-        Theme prompt: {theme_prompt}
-        ===========================
-        """)
-        
-        theme_response = generate_theme(
-            theme_prompt=theme_prompt,
-            persona=persona_response,
-            theme_assistant_id=THEME_ASSISTANT_ID
-        )
+        logger.info("Starting theme generation...")
+        try:
+            theme_response = generate_theme(
+                theme_prompt=theme_prompt,
+                persona=persona_response,
+                theme_assistant_id=THEME_ASSISTANT_ID
+            )
+            logger.info("Theme generation successful")
+        except Exception as e:
+            logger.error(f"Theme generation failed: {type(e).__name__} - {str(e)}", exc_info=True)
+            raise
 
         # Step 3: Generate final content
-        logger.info(f"""
-        ====== GENERATING CONTENT ======
-        Using persona: {persona_response[:200]}...
-        Using theme: {theme_response}
-        Char limit: {char_limit}
-        Allow emojis: {allow_emojis}
-        =============================
-        """)
-        
-        tweet_content = generate_content(
-            persona=persona_response,
-            theme=theme_response,
-            content_assistant_id=CONTENT_ASSISTANT_ID,
-            char_limit=char_limit,
-            allow_emojis=allow_emojis
-        )
+        logger.info("Starting content generation...")
+        try:
+            tweet_content = generate_content(
+                persona=persona_response,
+                theme=theme_response,
+                content_assistant_id=CONTENT_ASSISTANT_ID,
+                char_limit=char_limit,
+                allow_emojis=allow_emojis
+            )
+            logger.info("Content generation successful")
+        except Exception as e:
+            logger.error(f"Content generation failed: {type(e).__name__} - {str(e)}", exc_info=True)
+            raise
 
         # Create the image
-        final_image = add_text_to_image(image_path, tweet_content, allow_emojis=allow_emojis)
-        return final_image
+        logger.info("Starting image creation with text...")
+        try:
+            final_image = add_text_to_image(image_path, tweet_content, allow_emojis=allow_emojis)
+            logger.info("Successfully created final image with text")
+            return final_image
+        except Exception as e:
+            logger.error(f"Image creation failed: {type(e).__name__} - {str(e)}", exc_info=True)
+            raise
 
     except Exception as e:
         logger.error(f"""
         ====== ERROR IN SIMULATE_TWEET ======
-        Error: {str(e)}
+        Error type: {type(e).__name__}
+        Error message: {str(e)}
         Persona prompt: {persona_prompt}
         Theme prompt: {theme_prompt}
         ================================
-        """)
+        """, exc_info=True)
         raise
 
 

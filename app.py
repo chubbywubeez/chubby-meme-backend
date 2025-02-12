@@ -431,7 +431,17 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
         Job ID: {job_id}
         Persona Prompt: {request.personaPrompt}
         Theme Prompt: {request.themePrompt}
+        Request Details: {request.dict()}
         ===================================
+        """)
+        
+        # Log environment check
+        logger.info(f"""
+        ====== Environment Check ======
+        OpenAI API Key present: {bool(os.getenv('OPENAI_API_KEY'))}
+        Redis URL present: {bool(os.getenv('REDIS_URL'))}
+        Cloudinary Config present: {bool(os.getenv('CLOUDINARY_CLOUD_NAME'))}
+        ===========================
         """)
         
         redis_service.update_job_status(job_id, JOB_STATUS["PROCESSING"])
@@ -441,6 +451,9 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                 # Generate meme
                 logger.info(f"Starting meme generation for job {job_id}")
                 try:
+                    # Log before simulate_tweet
+                    logger.info("Calling simulate_tweet function...")
+                    
                     image = simulate_tweet(
                         persona_prompt=request.personaPrompt,
                         theme_prompt=request.themePrompt,
@@ -448,17 +461,27 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                         allow_emojis=request.allowEmojis
                     )
                     
+                    # Log after simulate_tweet
+                    logger.info("simulate_tweet function completed successfully")
+                    
                     if not image:
-                        raise ValueError("Failed to generate meme image")
+                        logger.error("simulate_tweet returned None")
+                        raise ValueError("Failed to generate meme image - returned None")
                         
                     logger.info("Successfully generated meme image")
                     
                 except Exception as e:
-                    logger.error(f"Error in simulate_tweet: {str(e)}")
+                    logger.error(f"""
+                    ====== Error in simulate_tweet ======
+                    Error type: {type(e).__name__}
+                    Error message: {str(e)}
+                    Job ID: {job_id}
+                    ================================
+                    """, exc_info=True)  # This will include the full traceback
                     redis_service.update_job_status(
                         job_id,
                         JOB_STATUS["FAILED"],
-                        {"error": f"Failed to generate meme: {str(e)}"}
+                        {"error": f"Failed to generate meme: {type(e).__name__} - {str(e)}"}
                     )
                     return
                 
