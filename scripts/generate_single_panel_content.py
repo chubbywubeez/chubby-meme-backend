@@ -91,23 +91,45 @@ def generate_theme(theme_prompt, persona, theme_assistant_id):
             time.sleep(1)
 
 def generate_content(persona, theme, content_assistant_id, char_limit=75, allow_emojis=False):
-    """Generate the final meme content based on persona and theme"""
-    max_retries = 3
+    """Generate the final meme content based on persona and theme prompts"""
+    max_retries = 2  # Reduced retries for faster response
+    
+    # Validate inputs
+    persona = persona.strip() if isinstance(persona, str) else "a funny internet meme creator"
+    theme = theme.strip() if isinstance(theme, str) else "random funny moment in life"
+    char_limit = max(min(int(char_limit) if str(char_limit).isdigit() else 75, 150), 30)  # Ensure between 30-150 chars
+    
+    logger.info(f"""
+    ====== CONTENT GENERATION PARAMS ======
+    Persona: {persona}
+    Theme: {theme}
+    Char limit: {char_limit}
+    Allow emojis: {allow_emojis}
+    ====================================
+    """)
+    
     for attempt in range(max_retries):
         try:
             thread = client.beta.threads.create()
             
-            # Combine persona and theme into a single message for efficiency
-            emoji_instruction = "with 1-2 emojis not always placed at the end of sentence" if allow_emojis else "do not include emojis"
-            prompt = f"""Using this persona: {persona[:200]}...
-            
-Create a funny, complete comment ({char_limit} chars max) {emoji_instruction} about: {theme}
+            # Create a single, optimized prompt
+            emoji_instruction = "with 1-2 emojis not always placed at the end of sentence" if allow_emojis else "without emojis"
+            prompt = f"""Generate a funny, viral meme text ({char_limit} chars max) {emoji_instruction}.
 
-Remember:
-1. Stay within {char_limit} characters
-2. Make it funny and engaging
-3. Keep the punchline clear and impactful"""
+Context:
+- Persona/Character: {persona}
+- Theme/Topic: {theme}
+
+Requirements:
+1. MUST be under {char_limit} characters
+2. Be funny and engaging
+3. Include a clear punchline
+4. Use the persona's style
+5. Keep it concise and impactful
+
+Format: Return ONLY the meme text, nothing else. If inputs are vague, create something generally funny."""
             
+            # Make a single API call
             client.beta.threads.messages.create(
                 thread_id=thread.id,
                 role="user",
@@ -121,6 +143,9 @@ Remember:
             wait_for_run_completion(thread_id=thread.id, run_id=run.id)
             response = get_assistant_response(thread.id)
             
+            # Clean up response
+            response = response.strip().strip('"').strip()
+            
             # Log response details
             logger.info(f"""
             ====== CONTENT RESPONSE ======
@@ -129,26 +154,22 @@ Remember:
             =============================
             """)
             
-            # If response is too long, retry with a shorter instruction
-            if len(response) > char_limit:
-                logger.warning(f"Response too long ({len(response)} chars). Retrying with shorter instruction...")
-                client.beta.threads.messages.create(
-                    thread_id=thread.id,
-                    role="user",
-                    content=f"Too long. Give me the shortest possible version that's still funny. Max {char_limit} chars."
-                )
-                run = client.beta.threads.runs.create(
-                    thread_id=thread.id,
-                    assistant_id=content_assistant_id
-                )
-                wait_for_run_completion(thread.id, run.id)
-                response = get_assistant_response(thread.id)
+            # If response is empty or invalid, generate a default response
+            if not response or len(response) < 10:  # Minimum 10 chars for valid response
+                logger.warning("Empty or invalid response received, using default")
+                return "When in doubt, Chubby makes memes! 😅" if allow_emojis else "When in doubt, Chubby makes memes!"
             
-            # If we still have a too-long response, start a new attempt
-            if len(response) > char_limit:
+            # If response is valid length, return it
+            if len(response) <= char_limit:
+                return response
+            
+            # If too long, try one more time with stricter instruction
+            if attempt < max_retries - 1:
+                logger.warning(f"Response too long ({len(response)} chars). Retrying...")
                 continue
-                
-            return response
+            
+            # If all attempts failed, return truncated version
+            return response[:char_limit]
             
         except Exception as e:
             logger.error(f"Content generation attempt {attempt + 1} failed: {str(e)}")

@@ -169,6 +169,15 @@ def simulate_tweet(persona_prompt="", theme_prompt="", char_limit=75, allow_emoj
     try:
         logger.info("Starting meme generation")
         
+        # Validate and set default prompts
+        if not persona_prompt.strip():
+            persona_prompt = "a funny internet meme creator"
+            logger.info("Using default persona prompt")
+            
+        if not theme_prompt.strip():
+            theme_prompt = "random funny moment in life"
+            logger.info("Using default theme prompt")
+        
         # Generate art first
         image_path, metadata_traits = get_generated_art(
             output_path="output/generated_art.png", 
@@ -177,36 +186,10 @@ def simulate_tweet(persona_prompt="", theme_prompt="", char_limit=75, allow_emoj
             theme_prompt=theme_prompt
         )
         
-        # Get a random cached persona instead of generating one
-        personas_data = load_personas()
-        logger.info(f"Loaded personas data: {json.dumps(personas_data, indent=2)}")
-        
-        if personas_data["personas"]:
-            cached_persona = random.choice(personas_data["personas"])
-            persona_response = cached_persona["persona"]
-            logger.info(f"""
-            ====== USING CACHED PERSONA ======
-            Generated at: {cached_persona['generated_at']}
-            Persona content: 
-            {persona_response}
-            ================================
-            """)
-        else:
-            # Fallback to generating new persona
-            logger.warning("No cached personas found, generating new one")
-            new_persona = generate_new_persona()
-            if new_persona and "persona" in new_persona:
-                persona_response = new_persona["persona"]
-            else:
-                raise ValueError("Failed to generate new persona")
-        
-        if not persona_response:
-            raise ValueError("Failed to get a valid persona")
-
-        # Generate content directly using the theme_prompt from user
+        # Generate content directly using both prompts
         logger.info(f"""
         ====== GENERATING CONTENT ======
-        Using persona: {persona_response[:200]}...
+        Using persona prompt: {persona_prompt}
         Using theme prompt: {theme_prompt}
         Char limit: {char_limit}
         Allow emojis: {allow_emojis}
@@ -214,8 +197,8 @@ def simulate_tweet(persona_prompt="", theme_prompt="", char_limit=75, allow_emoj
         """)
         
         tweet_content = generate_content(
-            persona=persona_response,
-            theme=theme_prompt,  # Use theme_prompt directly
+            persona=persona_prompt,
+            theme=theme_prompt,
             content_assistant_id=CONTENT_ASSISTANT_ID,
             char_limit=char_limit,
             allow_emojis=allow_emojis
