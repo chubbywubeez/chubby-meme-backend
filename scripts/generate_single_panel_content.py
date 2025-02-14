@@ -28,7 +28,7 @@ except Exception as e:
     raise
 
 # Content generation assistant ID
-CONTENT_ASSISTANT_ID = "asst_l4e1LATSvjLO7DsG8V7X8Q50"
+CONTENT_ASSISTANT_ID = "asst_wlN7vykmHXMOMiV0z01l2Nk1"
 
 def wait_for_run_completion(thread_id, run_id):
     try:
