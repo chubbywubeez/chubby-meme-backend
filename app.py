@@ -17,6 +17,7 @@ from utils.redis_utils import redis_service, JOB_STATUS
 from utils.logger import get_logger
 import traceback
 import time  # Add time import for timing functionality
+from tasks import generate_meme
 
 logger = get_logger(__name__)
 
@@ -106,20 +107,20 @@ async def generate_meme_preflight(request: Request):
     return JSONResponse(content={"message": "Invalid origin"}, status_code=400)
 
 @app.post("/api/generate-meme")
-async def generate_meme(request: MemeRequest, req: Request, background_tasks: BackgroundTasks):
+async def generate_meme_endpoint(request: MemeRequest, req: Request):
     try:
         # Check queue length to prevent overload
         queue_length = redis_service.get_queue_length()
         logger.info(f"Current queue length: {queue_length}")
 
         # Clean up stale jobs older than 30 minutes
-        redis_service.cleanup_stale_jobs(1800)  # 1800 seconds = 30 minutes
+        redis_service.cleanup_stale_jobs(1800)
         
         # Recheck queue length after cleanup
         queue_length = redis_service.get_queue_length()
         logger.info(f"Queue length after cleanup: {queue_length}")
         
-        if queue_length > 100:  # Adjust this number based on your capacity
+        if queue_length > 100:
             logger.warning("Queue is full, rejecting new requests")
             return JSONResponse(
                 content={"detail": "Server is currently busy. Please try again in a few minutes."},
@@ -131,7 +132,7 @@ async def generate_meme(request: MemeRequest, req: Request, background_tasks: Ba
         job_id = str(uuid.uuid4())
         logger.info(f"Generated new job ID: {job_id}")
         
-        # Store the job in Redis with initial status
+        # Store initial job data
         job_data = {
             "request": request.dict(),
             "created_at": datetime.utcnow().isoformat()
@@ -141,12 +142,17 @@ async def generate_meme(request: MemeRequest, req: Request, background_tasks: Ba
             logger.error("Failed to create job in Redis")
             raise HTTPException(status_code=500, detail="Failed to create job")
         
-        logger.info(f"Successfully stored job {job_id} in Redis")
+        # Submit task to Celery
+        task = generate_meme.delay(job_id, request.dict())
         
-        # Add the job to background tasks
-        background_tasks.add_task(process_meme_generation, job_id, request)
+        # Store task ID in Redis
+        redis_service.update_job_status(
+            job_id, 
+            JOB_STATUS["QUEUED"],
+            {"task_id": task.id}
+        )
         
-        logger.info(f"Job {job_id} created successfully")
+        logger.info(f"Job {job_id} created and queued with task ID {task.id}")
         return JSONResponse(
             content={"job_id": job_id, "status": JOB_STATUS["QUEUED"]},
             headers=get_cors_headers(req)
