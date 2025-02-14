@@ -4,31 +4,22 @@ import textwrap
 import logging
 import sys
 from fastapi import HTTPException
-import random
 import json
+import time  # Add time import
 
 # Add the backend directory to Python path
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(BACKEND_DIR)
 
 # Now we can import our modules
-from scripts.generate_single_panel_content import (
-    generate_content, 
-    generate_theme
-)
+from scripts.generate_single_panel_content import generate_meme_content
 from utils.media_utils import get_generated_art
-from scripts.persona_cache_generator import load_personas, generate_new_persona
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 httpx_logger = logging.getLogger("httpx")
 httpx_logger.setLevel(logging.WARNING)
-
-# Assistant IDs
-PERSONA_ASSISTANT_ID = "asst_mdB3xM0OczHqAKOB3EBrcp72"
-THEME_ASSISTANT_ID = "asst_KpVt3IbaX91ccQw8jVexfXff"
-CONTENT_ASSISTANT_ID = "asst_l4e1LATSvjLO7DsG8V7X8Q50"
 
 
 def add_text_to_image(image_path, text, allow_emojis=False, output_path="output/final_tweet.png"):
@@ -167,99 +158,75 @@ def add_text_to_image(image_path, text, allow_emojis=False, output_path="output/
 
 def simulate_tweet(persona_prompt="", theme_prompt="", char_limit=75, allow_emojis=True):
     try:
+        start_time = time.time()
         logger.info(f"""
         ====== Starting Meme Generation ======
-        Persona Prompt: {persona_prompt}
-        Theme Prompt: {theme_prompt}
+        Prompt: {theme_prompt}
         Char Limit: {char_limit}
         Allow Emojis: {allow_emojis}
+        Start Time: {time.time()}
         ===================================
         """)
         
         # Generate art first
         logger.info("Starting art generation...")
         try:
+            art_start_time = time.time()
             image_path, metadata_traits = get_generated_art(
                 output_path="output/generated_art.png", 
                 return_metadata=True,
                 persona_prompt=persona_prompt,
                 theme_prompt=theme_prompt
             )
-            logger.info(f"Art generation successful: {image_path}")
+            art_duration = time.time() - art_start_time
+            logger.info(f"Art generation successful: {image_path} (took {art_duration:.2f} seconds)")
         except Exception as e:
-            logger.error(f"Art generation failed: {type(e).__name__} - {str(e)}", exc_info=True)
-            raise
-        
-        # Get a random cached persona instead of generating one
-        logger.info("Loading cached personas...")
-        try:
-            personas_data = load_personas()
-            logger.info(f"Loaded {len(personas_data.get('personas', []))} cached personas")
-            
-            if personas_data["personas"]:
-                cached_persona = random.choice(personas_data["personas"])
-                persona_response = cached_persona["persona"]
-                logger.info("Successfully selected cached persona")
-            else:
-                logger.warning("No cached personas found, generating new one")
-                new_persona = generate_new_persona()
-                if new_persona and "persona" in new_persona:
-                    persona_response = new_persona["persona"]
-                    logger.info("Successfully generated new persona")
-                else:
-                    raise ValueError("Failed to generate new persona")
-        except Exception as e:
-            logger.error(f"Persona generation failed: {type(e).__name__} - {str(e)}", exc_info=True)
-            raise
-        
-        if not persona_response:
-            raise ValueError("Failed to get a valid persona")
-            
-        # Step 2: Get theme/angle from second agent
-        logger.info("Starting theme generation...")
-        try:
-            theme_response = generate_theme(
-                theme_prompt=theme_prompt,
-                persona=persona_response,
-                theme_assistant_id=THEME_ASSISTANT_ID
-            )
-            logger.info("Theme generation successful")
-        except Exception as e:
-            logger.error(f"Theme generation failed: {type(e).__name__} - {str(e)}", exc_info=True)
+            logger.error(f"Art generation failed after {time.time() - art_start_time:.2f} seconds: {type(e).__name__} - {str(e)}", exc_info=True)
             raise
 
-        # Step 3: Generate final content
+        # Generate meme content
         logger.info("Starting content generation...")
         try:
-            tweet_content = generate_content(
-                persona=persona_response,
-                theme=theme_response,
-                content_assistant_id=CONTENT_ASSISTANT_ID,
+            content_start_time = time.time()
+            meme_content = generate_meme_content(
+                prompt=theme_prompt,
                 char_limit=char_limit,
                 allow_emojis=allow_emojis
             )
-            logger.info("Content generation successful")
+            content_duration = time.time() - content_start_time
+            logger.info(f"Content generation successful (took {content_duration:.2f} seconds)")
         except Exception as e:
-            logger.error(f"Content generation failed: {type(e).__name__} - {str(e)}", exc_info=True)
+            logger.error(f"Content generation failed after {time.time() - content_start_time:.2f} seconds: {type(e).__name__} - {str(e)}", exc_info=True)
             raise
 
         # Create the image
         logger.info("Starting image creation with text...")
         try:
-            final_image = add_text_to_image(image_path, tweet_content, allow_emojis=allow_emojis)
-            logger.info("Successfully created final image with text")
+            text_start_time = time.time()
+            final_image = add_text_to_image(image_path, meme_content, allow_emojis=allow_emojis)
+            text_duration = time.time() - text_start_time
+            total_duration = time.time() - start_time
+            logger.info(f"""
+            ====== Meme Generation Complete ======
+            Total Duration: {total_duration:.2f} seconds
+            - Art Generation: {art_duration:.2f} seconds
+            - Content Generation: {content_duration:.2f} seconds
+            - Text Addition: {text_duration:.2f} seconds
+            ===================================
+            """)
             return final_image
         except Exception as e:
-            logger.error(f"Image creation failed: {type(e).__name__} - {str(e)}", exc_info=True)
+            logger.error(f"Image creation failed after {time.time() - text_start_time:.2f} seconds: {type(e).__name__} - {str(e)}", exc_info=True)
             raise
 
     except Exception as e:
+        total_duration = time.time() - start_time
         logger.error(f"""
         ====== ERROR IN SIMULATE_TWEET ======
         Error type: {type(e).__name__}
         Error message: {str(e)}
-        Persona prompt: {persona_prompt}
-        Theme prompt: {theme_prompt}
+        Total Duration Before Error: {total_duration:.2f} seconds
+        Prompt: {theme_prompt}
         ================================
         """, exc_info=True)
         raise

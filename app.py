@@ -16,6 +16,7 @@ from datetime import datetime
 from utils.redis_utils import redis_service, JOB_STATUS
 from utils.logger import get_logger
 import traceback
+import time  # Add time import for timing functionality
 
 logger = get_logger(__name__)
 
@@ -492,12 +493,14 @@ async def cleanup_stale_jobs(request: Request):
 
 async def process_meme_generation(job_id: str, request: MemeRequest):
     try:
+        start_time = time.time()  # Start timing
         logger.info(f"""
         ====== Starting Meme Generation ======
         Job ID: {job_id}
         Persona Prompt: {request.personaPrompt}
         Theme Prompt: {request.themePrompt}
         Request Details: {request.dict()}
+        Start Time: {datetime.fromtimestamp(start_time).isoformat()}
         ===================================
         """)
         
@@ -517,7 +520,7 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                 # Generate meme
                 logger.info(f"Starting meme generation for job {job_id}")
                 try:
-                    # Log before simulate_tweet
+                    generation_start_time = time.time()  # Start timing meme generation
                     logger.info(f"""
                     ====== Calling simulate_tweet ======
                     Job ID: {job_id}
@@ -526,6 +529,7 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                     - Theme Prompt: {request.themePrompt}
                     - Char Limit: {request.charLimit}
                     - Allow Emojis: {request.allowEmojis}
+                    Generation Start Time: {datetime.fromtimestamp(generation_start_time).isoformat()}
                     ==============================
                     """)
                     
@@ -535,6 +539,9 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                         char_limit=request.charLimit,
                         allow_emojis=request.allowEmojis
                     )
+                    
+                    generation_duration = time.time() - generation_start_time  # Calculate generation duration
+                    logger.info(f"Meme generation completed in {generation_duration:.2f} seconds")
                     
                     if not image:
                         raise ValueError("simulate_tweet returned None")
@@ -547,6 +554,7 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                     Error type: {type(e).__name__}
                     Error message: {str(e)}
                     Job ID: {job_id}
+                    Duration before error: {time.time() - start_time:.2f} seconds
                     Traceback:
                     {traceback.format_exc()}
                     ================================
@@ -558,12 +566,14 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                             "error": f"Failed to generate meme: {type(e).__name__} - {str(e)}",
                             "error_type": type(e).__name__,
                             "error_details": str(e),
+                            "duration": time.time() - start_time,
                             "traceback": traceback.format_exc()
                         }
                     )
                     return
                 
                 try:
+                    upload_start_time = time.time()  # Start timing upload
                     logger.info("Starting Cloudinary upload...")
                     # Process and store result
                     buffered = BytesIO()
@@ -579,6 +589,9 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                         }
                     )
                     
+                    upload_duration = time.time() - upload_start_time  # Calculate upload duration
+                    logger.info(f"Cloudinary upload completed in {upload_duration:.2f} seconds")
+                    
                     if not result or 'secure_url' not in result:
                         raise ValueError("Failed to get secure URL from Cloudinary")
                         
@@ -588,6 +601,7 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                     Resource Type: {result.get('resource_type')}
                     Format: {result.get('format')}
                     Size: {result.get('bytes')} bytes
+                    Upload Duration: {upload_duration:.2f} seconds
                     =====================================
                     """)
                     
@@ -597,6 +611,7 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                     Error type: {type(e).__name__}
                     Error message: {str(e)}
                     Job ID: {job_id}
+                    Duration before error: {time.time() - start_time:.2f} seconds
                     Traceback:
                     {traceback.format_exc()}
                     ====================================
@@ -608,6 +623,7 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                             "error": f"Failed to upload image: {type(e).__name__} - {str(e)}",
                             "error_type": type(e).__name__,
                             "error_details": str(e),
+                            "duration": time.time() - start_time,
                             "traceback": traceback.format_exc()
                         }
                     )
@@ -615,11 +631,17 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                 
                 try:
                     # Store meme data for sharing
+                    total_duration = time.time() - start_time  # Calculate total duration
                     meme_data = {
                         "imageUrl": result['secure_url'],
                         "publicUrl": result['secure_url'],
                         "type": request.type,
-                        "memeId": job_id
+                        "memeId": job_id,
+                        "timing": {
+                            "total_duration": round(total_duration, 2),
+                            "generation_duration": round(generation_duration, 2),
+                            "upload_duration": round(upload_duration, 2)
+                        }
                     }
                     
                     logger.info(f"""
@@ -627,6 +649,9 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                     Meme ID: {job_id}
                     Image URL: {meme_data['imageUrl']}
                     Public URL: {meme_data['publicUrl']}
+                    Generation Time: {generation_duration:.2f} seconds
+                    Upload Time: {upload_duration:.2f} seconds
+                    Total Time: {total_duration:.2f} seconds
                     ============================
                     """)
                     
@@ -639,11 +664,16 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                             "result": {
                                 "imageUrl": result['secure_url'],
                                 "type": request.type,
-                                "memeId": job_id
+                                "memeId": job_id,
+                                "timing": {
+                                    "total_duration": round(total_duration, 2),
+                                    "generation_duration": round(generation_duration, 2),
+                                    "upload_duration": round(upload_duration, 2)
+                                }
                             }
                         }
                     )
-                    logger.info(f"Job {job_id} completed successfully")
+                    logger.info(f"Job {job_id} completed successfully in {total_duration:.2f} seconds")
                     
                 except Exception as e:
                     logger.error(f"""
@@ -651,6 +681,7 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                     Error type: {type(e).__name__}
                     Error message: {str(e)}
                     Job ID: {job_id}
+                    Duration before error: {time.time() - start_time:.2f} seconds
                     Traceback:
                     {traceback.format_exc()}
                     ================================
@@ -662,6 +693,7 @@ async def process_meme_generation(job_id: str, request: MemeRequest):
                             "error": f"Failed to store meme data: {type(e).__name__} - {str(e)}",
                             "error_type": type(e).__name__,
                             "error_details": str(e),
+                            "duration": time.time() - start_time,
                             "traceback": traceback.format_exc()
                         }
                     )
