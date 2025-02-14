@@ -28,11 +28,10 @@ uvicorn==0.34.0
 gunicorn==21.2.0
 mysql-connector-python==8.0.26
 cloudinary==1.39.0
-redis[hiredis]==4.5.1
+redis[hiredis]>=5.0.1
 schedule
 python-multipart
 celery>=5.3.6
-redis>=5.0.1
 kombu>=5.3.4
 billiard>=4.2.0
 vine>=5.1.0
