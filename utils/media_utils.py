@@ -31,9 +31,9 @@ def load_images_from_folder(folder):
     ]
 
 def get_generated_art(output_path="output/generated_art.png", return_metadata=False, persona_prompt="", theme_prompt=""):
-    """Generate art based on persona and theme prompts."""
+    """Generate art by randomly selecting traits."""
     try:
-        logger.info(f"Received persona prompt: '{persona_prompt}', theme prompt: '{theme_prompt}'")
+        logger.info("Starting art generation...")
         
         ASSETS_PATH = "media/assets"
         trait_categories = ['background', 'base', 'mouth', 'eyes', 'head', 'body']
@@ -47,35 +47,12 @@ def get_generated_art(output_path="output/generated_art.png", return_metadata=Fa
                 available_traits[category] = traits
                 logger.info(f"Found {category} traits: {traits}")
 
+        # Randomly select traits for each category
         selected_traits = {}
-        
-        # Match persona-related traits (body and head)
-        persona_keywords = [word.lower() for word in persona_prompt.split()]
-        for category in ['body', 'head', 'mouth', 'eyes']:
-            for trait in available_traits[category]:
-                trait_lower = trait.lower()
-                for keyword in persona_keywords:
-                    if keyword in trait_lower or trait_lower in keyword:
-                        selected_traits[category] = trait
-                        logger.info(f"✓ Matched {category}: {trait} from persona keyword '{keyword}'")
-                        break
-
-        # Match theme-related traits (eyes and mouth)
-        theme_keywords = [word.lower() for word in theme_prompt.split()]
-        for category in ['body', 'head', 'eyes', 'mouth']:
-            for trait in available_traits[category]:
-                trait_lower = trait.lower()
-                for keyword in theme_keywords:
-                    if keyword in trait_lower or trait_lower in keyword:
-                        selected_traits[category] = trait
-                        logger.info(f"✓ Matched {category}: {trait} from theme keyword '{keyword}'")
-                        break
-
-        # For any category without a match, select random trait
         for category in trait_categories:
-            if category not in selected_traits and category in available_traits:
+            if category in available_traits:
                 selected_traits[category] = random.choice(available_traits[category])
-                logger.info(f"Randomly selected {category}: {selected_traits[category]}")
+                logger.info(f"Selected {category}: {selected_traits[category]}")
 
         # Generate art with selected traits
         result = get_generate_art(
