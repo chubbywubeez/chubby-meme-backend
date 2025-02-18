@@ -156,12 +156,12 @@ def add_text_to_image(image_path, text, allow_emojis=False, output_path="output/
         raise
 
 
-def simulate_tweet(prompt="", char_limit=75, allow_emojis=True):
+def simulate_tweet(persona_prompt="", theme_prompt="", char_limit=75, allow_emojis=True):
     try:
         start_time = time.time()
         logger.info(f"""
         ====== Starting Meme Generation ======
-        Prompt: {prompt}
+        Prompt: {theme_prompt}
         Char Limit: {char_limit}
         Allow Emojis: {allow_emojis}
         Start Time: {time.time()}
@@ -174,7 +174,9 @@ def simulate_tweet(prompt="", char_limit=75, allow_emojis=True):
             art_start_time = time.time()
             image_path, metadata_traits = get_generated_art(
                 output_path="output/generated_art.png", 
-                return_metadata=True
+                return_metadata=True,
+                persona_prompt=persona_prompt,
+                theme_prompt=theme_prompt
             )
             art_duration = time.time() - art_start_time
             logger.info(f"Art generation successful: {image_path} (took {art_duration:.2f} seconds)")
@@ -187,7 +189,7 @@ def simulate_tweet(prompt="", char_limit=75, allow_emojis=True):
         try:
             content_start_time = time.time()
             meme_content = generate_meme_content(
-                prompt=prompt,
+                prompt=theme_prompt,
                 char_limit=char_limit,
                 allow_emojis=allow_emojis
             )
@@ -224,7 +226,7 @@ def simulate_tweet(prompt="", char_limit=75, allow_emojis=True):
         Error type: {type(e).__name__}
         Error message: {str(e)}
         Total Duration Before Error: {total_duration:.2f} seconds
-        Prompt: {prompt}
+        Prompt: {theme_prompt}
         ================================
         """, exc_info=True)
         raise
